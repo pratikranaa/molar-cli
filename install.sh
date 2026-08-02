@@ -1,0 +1,140 @@
+#!/usr/bin/env sh
+# Molar CLI installer
+# Usage: curl -fsSL https://raw.githubusercontent.com/pratikranaa/molar-cli/main/install.sh | sh
+# Or:    curl -fsSL https://raw.githubusercontent.com/pratikranaa/molar-cli/main/install.sh | sh -s -- --install-dir /custom/path
+
+set -eu
+
+REPO="pratikranaa/molar-cli"
+COSIGN_IDENTITY_REGEXP='^https://github\.com/pratikranaa/Molar/\.github/workflows/release-cli\.yml@refs/tags/v'
+COSIGN_ISSUER="https://token.actions.githubusercontent.com"
+INSTALL_DIR="/usr/local/bin"
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --install-dir)
+      INSTALL_DIR="$2"; shift 2 ;;
+    --install-dir=*)
+      INSTALL_DIR="${1#*=}"; shift ;;
+    --force)
+      shift ;;
+    --version)
+      VERSION="$2"; shift 2 ;;
+    --version=*)
+      VERSION="${1#*=}"; shift ;;
+    *)
+      echo "Unknown argument: $1" >&2; exit 1 ;;
+  esac
+done
+
+OS="$(uname -s)"
+ARCH="$(uname -m)"
+
+case "$OS" in
+  Darwin) PLAT_OS="darwin" ;;
+  Linux)  PLAT_OS="linux" ;;
+  *)
+    echo "Unsupported OS: $OS" >&2
+    echo "Please download manually from https://github.com/$REPO/releases" >&2
+    exit 1 ;;
+esac
+
+case "$ARCH" in
+  arm64|aarch64) PLAT_ARCH="arm64" ;;
+  x86_64|amd64) PLAT_ARCH="x64" ;;
+  *) echo "Unsupported architecture: $ARCH" >&2; exit 1 ;;
+esac
+
+BINARY_NAME="molar-${PLAT_OS}-${PLAT_ARCH}"
+INSTALL_NAME="molar"
+
+if [ -z "${VERSION:-}" ]; then
+  echo "→ Fetching latest release..."
+  if command -v curl >/dev/null 2>&1; then
+    RELEASE_JSON="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest")"
+  elif command -v wget >/dev/null 2>&1; then
+    RELEASE_JSON="$(wget -qO- "https://api.github.com/repos/$REPO/releases/latest")"
+  else
+    echo "Error: neither curl nor wget found" >&2; exit 1
+  fi
+  VERSION="$(echo "$RELEASE_JSON" | grep '"tag_name"' | head -1 | sed 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')"
+  if [ -z "$VERSION" ]; then
+    echo "Error: could not determine latest version" >&2; exit 1
+  fi
+fi
+
+echo "→ Installing molar $VERSION for ${PLAT_OS}-${PLAT_ARCH}..."
+
+DOWNLOAD_URL="https://github.com/$REPO/releases/download/$VERSION/${BINARY_NAME}"
+CHECKSUM_URL="${DOWNLOAD_URL}.sha256"
+BUNDLE_URL="${DOWNLOAD_URL}.cosign.bundle"
+TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$TMP_DIR"' EXIT
+TMP_BIN="$TMP_DIR/$BINARY_NAME"
+TMP_SHA="$TMP_DIR/${BINARY_NAME}.sha256"
+TMP_BUNDLE="$TMP_DIR/${BINARY_NAME}.cosign.bundle"
+
+if ! command -v cosign >/dev/null 2>&1; then
+  echo "Error: cosign is required to verify the Molar release signature." >&2
+  echo "Install it from https://docs.sigstore.dev/cosign/system_config/installation/ and retry." >&2
+  exit 1
+fi
+
+echo "→ Downloading binary..."
+if command -v curl >/dev/null 2>&1; then
+  curl -fsSL --progress-bar -o "$TMP_BIN" "$DOWNLOAD_URL"
+  curl -fsSL -o "$TMP_SHA" "$CHECKSUM_URL"
+  curl -fsSL -o "$TMP_BUNDLE" "$BUNDLE_URL"
+else
+  wget -q --show-progress -O "$TMP_BIN" "$DOWNLOAD_URL" 2>&1 || wget -qO "$TMP_BIN" "$DOWNLOAD_URL"
+  wget -qO "$TMP_SHA" "$CHECKSUM_URL"
+  wget -qO "$TMP_BUNDLE" "$BUNDLE_URL"
+fi
+
+echo "→ Verifying checksum..."
+if command -v sha256sum >/dev/null 2>&1; then
+  ACTUAL="$(sha256sum "$TMP_BIN" | awk '{print $1}')"
+elif command -v shasum >/dev/null 2>&1; then
+  ACTUAL="$(shasum -a 256 "$TMP_BIN" | awk '{print $1}')"
+else
+  echo "Error: sha256sum or shasum is required; refusing an unverified install." >&2
+  exit 1
+fi
+
+EXPECTED="$(awk '{print $1}' "$TMP_SHA")"
+if [ "$ACTUAL" != "$EXPECTED" ]; then
+  echo "Error: checksum mismatch!" >&2
+  echo "  expected: $EXPECTED" >&2
+  echo "  got:      $ACTUAL" >&2
+  exit 1
+fi
+echo "  ✓ sha256: $ACTUAL"
+
+echo "→ Verifying keyless signature..."
+cosign verify-blob \
+  --bundle "$TMP_BUNDLE" \
+  --certificate-identity-regexp "$COSIGN_IDENTITY_REGEXP" \
+  --certificate-oidc-issuer "$COSIGN_ISSUER" \
+  "$TMP_BIN" >/dev/null
+echo "  ✓ Sigstore identity: pratikranaa/Molar release-cli.yml"
+
+chmod +x "$TMP_BIN"
+DEST="$INSTALL_DIR/$INSTALL_NAME"
+mkdir -p "$INSTALL_DIR"
+if [ -f "$DEST" ]; then
+  PREV="$INSTALL_DIR/$INSTALL_NAME.previous"
+  mv "$DEST" "$PREV" 2>/dev/null || true
+  echo "  ↩  previous version saved as $PREV"
+fi
+mv "$TMP_BIN" "$DEST"
+echo "  ✓ Installed to $DEST"
+echo ""
+
+if ! echo "$PATH" | grep -q "$INSTALL_DIR"; then
+  echo "Note: $INSTALL_DIR is not in your PATH."
+  echo "Add this to your shell profile:"
+  echo "  export PATH=\"$INSTALL_DIR:\$PATH\""
+  echo ""
+fi
+
+"$DEST" --version && echo "" && echo "✓ molar is ready. Run 'molar --help' to get started."
