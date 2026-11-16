@@ -49,24 +49,18 @@ BINARY_NAME="molar-${PLAT_OS}-${PLAT_ARCH}"
 INSTALL_NAME="molar"
 
 if [ -z "${VERSION:-}" ]; then
-  echo "→ Fetching latest release..."
-  if command -v curl >/dev/null 2>&1; then
-    RELEASE_JSON="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest")"
-  elif command -v wget >/dev/null 2>&1; then
-    RELEASE_JSON="$(wget -qO- "https://api.github.com/repos/$REPO/releases/latest")"
-  else
-    echo "Error: neither curl nor wget found" >&2; exit 1
-  fi
-  VERSION="$(echo "$RELEASE_JSON" | grep '"tag_name"' | head -1 | sed 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')"
-  if [ -z "$VERSION" ]; then
-    echo "Error: could not determine latest version" >&2; exit 1
-  fi
+  # Only this explicitly pinned beta uses checksum-only verification.
+  VERSION="v0.3.14"
 fi
 
 echo "→ Installing molar $VERSION for ${PLAT_OS}-${PLAT_ARCH}..."
 
 DOWNLOAD_URL="https://github.com/$REPO/releases/download/$VERSION/${BINARY_NAME}"
-CHECKSUM_URL="${DOWNLOAD_URL}.sha256"
+if [ "$VERSION" = "v0.3.14" ]; then
+  CHECKSUM_URL="https://github.com/$REPO/releases/download/$VERSION/SHA256SUMS"
+else
+  CHECKSUM_URL="${DOWNLOAD_URL}.sha256"
+fi
 BUNDLE_URL="${DOWNLOAD_URL}.cosign.bundle"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
@@ -74,7 +68,7 @@ TMP_BIN="$TMP_DIR/$BINARY_NAME"
 TMP_SHA="$TMP_DIR/${BINARY_NAME}.sha256"
 TMP_BUNDLE="$TMP_DIR/${BINARY_NAME}.cosign.bundle"
 
-if ! command -v cosign >/dev/null 2>&1; then
+if [ "$VERSION" != "v0.3.14" ] && ! command -v cosign >/dev/null 2>&1; then
   echo "Error: cosign is required to verify the Molar release signature." >&2
   echo "Install it from https://docs.sigstore.dev/cosign/system_config/installation/ and retry." >&2
   exit 1
@@ -84,11 +78,11 @@ echo "→ Downloading binary..."
 if command -v curl >/dev/null 2>&1; then
   curl -fsSL --progress-bar -o "$TMP_BIN" "$DOWNLOAD_URL"
   curl -fsSL -o "$TMP_SHA" "$CHECKSUM_URL"
-  curl -fsSL -o "$TMP_BUNDLE" "$BUNDLE_URL"
+  if [ "$VERSION" != "v0.3.14" ]; then curl -fsSL -o "$TMP_BUNDLE" "$BUNDLE_URL"; fi
 else
   wget -q --show-progress -O "$TMP_BIN" "$DOWNLOAD_URL" 2>&1 || wget -qO "$TMP_BIN" "$DOWNLOAD_URL"
   wget -qO "$TMP_SHA" "$CHECKSUM_URL"
-  wget -qO "$TMP_BUNDLE" "$BUNDLE_URL"
+  if [ "$VERSION" != "v0.3.14" ]; then wget -qO "$TMP_BUNDLE" "$BUNDLE_URL"; fi
 fi
 
 echo "→ Verifying checksum..."
@@ -101,7 +95,13 @@ else
   exit 1
 fi
 
-EXPECTED="$(awk '{print $1}' "$TMP_SHA")"
+if [ "$VERSION" = "v0.3.14" ]; then
+  EXPECTED="$(awk -v name="$BINARY_NAME" '$2 == name {print $1; count++} END {if (count != 1) exit 1}' "$TMP_SHA")"
+else
+  EXPECTED="$(awk '{print $1}' "$TMP_SHA")"
+fi
+case "$EXPECTED" in *[!0-9a-f]*|'') echo "Error: invalid checksum" >&2; exit 1;; esac
+if [ "${#EXPECTED}" -ne 64 ]; then echo "Error: invalid checksum" >&2; exit 1; fi
 if [ "$ACTUAL" != "$EXPECTED" ]; then
   echo "Error: checksum mismatch!" >&2
   echo "  expected: $EXPECTED" >&2
@@ -110,13 +110,17 @@ if [ "$ACTUAL" != "$EXPECTED" ]; then
 fi
 echo "  ✓ sha256: $ACTUAL"
 
-echo "→ Verifying keyless signature..."
-cosign verify-blob \
-  --bundle "$TMP_BUNDLE" \
-  --certificate-identity-regexp "$COSIGN_IDENTITY_REGEXP" \
-  --certificate-oidc-issuer "$COSIGN_ISSUER" \
-  "$TMP_BIN" >/dev/null
-echo "  ✓ Sigstore identity: pratikranaa/Molar release-cli.yml"
+if [ "$VERSION" = "v0.3.14" ]; then
+  echo "  Note: unsigned beta; SHA-256 verifies download integrity only."
+else
+  echo "→ Verifying keyless signature..."
+  cosign verify-blob \
+    --bundle "$TMP_BUNDLE" \
+    --certificate-identity-regexp "$COSIGN_IDENTITY_REGEXP" \
+    --certificate-oidc-issuer "$COSIGN_ISSUER" \
+    "$TMP_BIN" >/dev/null
+  echo "  ✓ Sigstore identity: pratikranaa/Molar release-cli.yml"
+fi
 
 chmod +x "$TMP_BIN"
 DEST="$INSTALL_DIR/$INSTALL_NAME"
