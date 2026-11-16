@@ -2,8 +2,36 @@
 
 This repository is the public, unauthenticated distribution surface for the
 [Molar](https://molar.it) universal browser-automation and verification CLI.
-Source builds run in `pratikranaa/Molar`; this repository contains only release
-artifacts and the fail-closed installer.
+Source builds run in `pratikranaa/Molar`; this repository contains the agent plugin, release artifacts, and the fail-closed installer.
+
+## Agent plugin
+
+The plugin adds the Molar skill and the hosted MCP server. Connecting the server requires Molar OAuth; the CLI skill requires the separately installed CLI and a publicly reachable target you are authorized to test. The published CLI does not include the local browser daemon.
+
+Claude Code, inside a session:
+
+```text
+/plugin marketplace add pratikranaa/molar-cli
+/plugin install molar@molar
+```
+
+On Claude Code v2.1.275 or newer, the one-shot form is `/plugin install molar --marketplace pratikranaa/molar-cli`.
+
+Or from a terminal:
+
+```sh
+claude plugin marketplace add pratikranaa/molar-cli
+claude plugin install molar@molar
+```
+
+Codex:
+
+```sh
+codex plugin marketplace add pratikranaa/molar-cli
+codex plugin add molar@molar
+```
+
+The plugin and skill are licensed under Apache-2.0; see [LICENSE](LICENSE).
 
 ## Install
 

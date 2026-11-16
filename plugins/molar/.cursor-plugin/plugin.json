@@ -1,0 +1,25 @@
+{
+  "name": "molar",
+  "version": "0.3.13",
+  "description": "Check a change in a real browser, run plain-English QA tests, explore a site and export Playwright tests with Molar.",
+  "author": {
+    "name": "Molar",
+    "url": "https://molar.it"
+  },
+  "homepage": "https://molar.it",
+  "privacyPolicyUrl": "https://molar.it/privacy",
+  "repository": "https://github.com/pratikranaa/molar-cli",
+  "license": "Apache-2.0",
+  "keywords": [
+    "qa",
+    "testing",
+    "browser",
+    "playwright",
+    "end-to-end",
+    "verification",
+    "mcp"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "displayName": "Molar"
+}

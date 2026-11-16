@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "molar": {
+      "type": "http",
+      "url": "https://api.molar.it/mcp"
+    }
+  }
+}

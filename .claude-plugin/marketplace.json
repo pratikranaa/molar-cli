@@ -1,0 +1,15 @@
+{
+  "name": "molar",
+  "description": "Molar for Claude Code: verify changes in a real browser and run QA tests.",
+  "owner": {
+    "name": "Molar",
+    "url": "https://molar.it"
+  },
+  "plugins": [
+    {
+      "name": "molar",
+      "source": "./plugins/molar",
+      "description": "Check a change in a real browser, run plain-English QA tests, explore a site and export Playwright tests with Molar."
+    }
+  ]
+}

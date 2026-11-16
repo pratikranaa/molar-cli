@@ -1,0 +1,20 @@
+{
+  "name": "molar",
+  "interface": {
+    "displayName": "Molar"
+  },
+  "plugins": [
+    {
+      "name": "molar",
+      "source": {
+        "source": "local",
+        "path": "./plugins/molar"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}
